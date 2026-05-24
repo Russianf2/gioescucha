@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Now Playing · Spotify</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #121212;
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 32px;
+      overflow-x: hidden;
+    }
+    a { text-decoration: none; color: inherit; }
+    button { cursor: pointer; border: none; background: none; font-family: inherit; }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+    /* --- Partículas de fondo --- */
+    .particles {
+      position: fixed; inset: 0;
+      pointer-events: none; z-index: 0; overflow: hidden;
+    }
+    .particle {
+      position: absolute; border-radius: 50%;
+      filter: blur(80px); opacity: 0.4;
+    }
+    .particle:nth-child(1) {
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(29,185,84,0.25), transparent);
+      top: -10%; left: -10%;
+      animation: floatA 20s ease-in-out infinite;
+    }
+    .particle:nth-child(2) {
+      width: 350px; height: 350px;
+      background: radial-gradient(circle, rgba(29,185,84,0.15), transparent);
+      bottom: -5%; right: -5%;
+      animation: floatB 25s ease-in-out infinite;
+    }
+    .particle:nth-child(3) {
+      width: 250px; height: 250px;
+      background: radial-gradient(circle, rgba(29,185,84,0.1), transparent);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      animation: floatC 18s ease-in-out infinite;
+    }
+    @keyframes floatA {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(60px, 40px); }
+      66% { transform: translate(-30px, 80px); }
+    }
+    @keyframes floatB {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(-50px, -30px); }
+      66% { transform: translate(40px, -60px); }
+    }
+    @keyframes floatC {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-40%, -60%) scale(1.15); }
+    }
+
+    /* --- Contenedor principal --- */
+    #app {
+      position: relative; z-index: 1;
+      width: 100%; max-width: 1200px;
+      margin: 0 auto;
+      flex: 1;
+      display: flex; flex-direction: column;
+      gap: 24px;
+    }
+
+    /* --- Columnas (player + recientes) --- */
+    .columns {
+      display: flex;
+      gap: 24px;
+      flex: 1;
+      align-items: flex-start;
+    }
+    .columns > .card {
+      flex: 1;
+    }
+
+    /* --- Header --- */
+    .header {
+      padding: 8px 0;
+    }
+    .header h1 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #b3b3b3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #1DB954;
+      animation: pulse-dot 1.8s ease-in-out infinite;
+    }
+    .header .dot.paused { background: #535353; animation: none; }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* --- Glassmorphism Card --- */
+    .card {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    /* --- Player --- */
+    .player {
+      flex: 0 0 420px;
+      max-width: 480px;
+      text-align: center;
+    }
+
+    .album-art {
+      width: min(320px, 30vw);
+      aspect-ratio: 1;
+      border-radius: 16px;
+      margin: 0 auto 20px;
+      display: block;
+      box-shadow: 0 0 40px rgba(29, 185, 84, 0.12), 0 8px 32px rgba(0,0,0,0.5);
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s ease;
+      background: #282828;
+      object-fit: cover;
+    }
+    .album-art:hover {
+      transform: scale(1.015);
+      box-shadow: 0 0 60px rgba(29, 185, 84, 0.2), 0 12px 40px rgba(0,0,0,0.6);
+    }
+
+    .track-name {
+      font-size: clamp(1.15rem, 2.5vw, 1.5rem);
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .track-artist {
+      font-size: clamp(0.9rem, 2vw, 1.05rem);
+      font-weight: 400;
+      color: #b3b3b3;
+      margin-bottom: 20px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* --- Progress Bar --- */
+    .progress-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .progress-time {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #9e9e9e;
+      min-width: 36px;
+      font-variant-numeric: tabular-nums;
+    }
+    .progress-time:last-child { text-align: right; }
+    .progress-track {
+      flex: 1; height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      position: relative; overflow: hidden;
+      cursor: pointer;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #1DB954, #1ed760);
+      position: relative;
+      transition: width 0.1s linear;
+    }
+    .progress-fill::after {
+      content: '';
+      position: absolute; right: -4px; top: 50%;
+      transform: translateY(-50%);
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #ffffff;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      box-shadow: 0 0 8px rgba(29,185,84,0.5);
+    }
+    .progress-track:hover .progress-fill::after { opacity: 1; }
+
+    /* --- Nothing Playing --- */
+    .nothing-playing { text-align: center; padding: 40px 0; }
+    .nothing-playing svg {
+      width: 56px; height: 56px;
+      margin-bottom: 16px; opacity: 0.4;
+    }
+    .nothing-playing p { color: #b3b3b3; font-size: 1rem; }
+
+    /* --- Botones --- */
+    .btn-spotify {
+      display: inline-flex;
+      align-items: center; gap: 8px;
+      padding: 11px 24px;
+      border-radius: 50px;
+      font-size: 0.9rem; font-weight: 600;
+      color: #1DB954;
+      background: rgba(29, 185, 84, 0.1);
+      border: 1px solid rgba(29, 185, 84, 0.25);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .btn-spotify:hover {
+      background: #1DB954; color: #ffffff;
+      border-color: #1DB954;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(29, 185, 84, 0.3);
+    }
+    .btn-spotify:active { transform: translateY(0); }
+    .btn-spotify svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+    .btn-login {
+      display: inline-flex;
+      align-items: center; gap: 10px;
+      padding: 14px 32px;
+      border-radius: 50px;
+      font-size: 1rem; font-weight: 700;
+      color: #ffffff; background: #1DB954;
+      border: none;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      margin-top: 16px;
+    }
+    .btn-login:hover {
+      background: #1ed760;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 28px rgba(29, 185, 84, 0.35);
+    }
+
+    .login-screen { text-align: center; padding: 48px 0; }
+    .login-screen .logo { width: 48px; height: 48px; margin-bottom: 20px; }
+    .login-screen h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+    .login-screen p { color: #b3b3b3; font-size: 0.95rem; margin-bottom: 4px; }
+
+    /* --- Recently Played --- */
+    .recent-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .recent-header h2 {
+      font-size: 0.85rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: #b3b3b3;
+    }
+    .recent-header .count {
+      font-size: 0.75rem; color: #6a6a6a; font-weight: 500;
+    }
+    .recent-list { display: flex; flex-direction: column; gap: 6px; }
+    .recent-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 10px; border-radius: 10px;
+      transition: background 0.2s ease; cursor: default;
+    }
+    .recent-item:hover { background: rgba(255, 255, 255, 0.04); }
+    .recent-item .index {
+      font-size: 0.8rem; font-weight: 600; color: #6a6a6a;
+      min-width: 20px; text-align: right;
+    }
+    .recent-item img {
+      width: 44px; height: 44px;
+      border-radius: 6px; object-fit: cover;
+      background: #282828; flex-shrink: 0;
+    }
+    .recent-item .info { flex: 1; min-width: 0; }
+    .recent-item .info .name {
+      font-size: 0.88rem; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .recent-item .info .artist {
+      font-size: 0.78rem; color: #9e9e9e;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* --- Estados y utilidades --- */
+    .hidden { display: none !important; }
+    .fade-enter { animation: fadeIn 0.4s ease forwards; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid rgba(255,255,255,0.1);
+      border-top-color: #1DB954; border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 12px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* --- Responsive --- */
+    @media (max-width: 1024px) {
+      .player { flex: 0 0 360px; }
+      .album-art { width: min(280px, 28vw); }
+    }
+    @media (max-width: 768px) {
+      body { padding: 16px; }
+      .columns { flex-direction: column; }
+      .player { flex: none; max-width: none; }
+      .album-art { width: min(260px, 60vw); }
+      .card { padding: 20px 16px; border-radius: 16px; }
+      .recent-item { padding: 6px 8px; }
+      .recent-item img { width: 38px; height: 38px; }
+    }
+    @media (max-width: 380px) {
+      .album-art { width: min(200px, 65vw); }
+      .track-name { font-size: 1rem; }
+      .track-artist { font-size: 0.85rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Partículas -->
+  <div class="particles" aria-hidden="true">
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+  </div>
+
+  <!-- App -->
+  <div id="app">
+
+    <!-- Header -->
+    <header class="header">
+      <h1><span class="dot" id="statusDot"></span> Now Playing</h1>
+    </header>
+
+    <!-- Columnas: Player + Recently Played -->
+    <div class="columns">
+
+      <!-- Player -->
+      <div id="playerCard" class="card player">
+        <img id="albumArt" class="album-art" src="" alt="Portada del álbum">
+
+        <div id="trackInfo" class="fade-enter">
+          <div class="track-name" id="trackName">Cargando...</div>
+          <div class="track-artist" id="trackArtist">—</div>
+        </div>
+
+        <div id="progressSection">
+          <div class="progress-container">
+            <span class="progress-time" id="currentTime">0:00</span>
+            <div class="progress-track" id="progressTrack">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <span class="progress-time" id="totalTime">0:00</span>
+          </div>
+        </div>
+
+        <a id="openBtn" class="btn-spotify" href="#" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+          Abrir en Spotify
+        </a>
+
+        <div id="nothingPlaying" class="nothing-playing hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          <p>Nada reproduciéndose ahora</p>
+        </div>
+
+        <!-- Login Screen (dentro del player) -->
+        <div id="loginScreen" class="login-screen hidden">
+          <svg class="logo" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+            <circle cx="24" cy="24" r="22" fill="#1DB954"/>
+            <path d="M16 20v12M20 18v14M24 16v16M28 20v12M32 18v14" stroke="#121212" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <h2>Conecta con Spotify</h2>
+          <p>Muestra en tiempo real lo que escuchas.</p>
+          <button class="btn-login" onclick="App.login()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+            Conectar con Spotify
+          </button>
+        </div>
+      </div>
+
+      <!-- Recently Played -->
+      <div id="recentCard" class="card">
+        <div class="recent-header">
+          <h2>Últimas canciones</h2>
+          <span class="count" id="recentCount">0</span>
+        </div>
+        <div class="recent-list" id="recentList">
+          <div class="spinner"></div>
+        </div>
+      </div>
+
+    </div><!-- /columns -->
+  </div><!-- /app -->
+
+  <script>
+    /* =============================================
+       CONFIGURACIÓN
+       ============================================= */
+
+    /* --- TU CLIENT ID DE SPOTIFY ---
+       Obtenlo en: https://developer.spotify.com/dashboard
+       Crea una app, agrega la Redirect URI (la URL donde esté alojado este index.html),
+       y pega el Client ID abajo.
+    */
+    const CLIENT_ID = 'c170ab854dbc4a92b38240ff11a5961a';
+
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
+    const SCOPES = 'user-read-currently-playing user-read-recently-played user-read-playback-state';
+
+    /* =============================================
+       Demo Data
+       ============================================= */
+    const DEMO_ALBUM_SVG = 'data:image/svg+xml,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">' +
+      '<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">' +
+      '<stop offset="0%" style="stop-color:#1DB954"/>' +
+      '<stop offset="100%" style="stop-color:#121212"/>' +
+      '</linearGradient></defs>' +
+      '<rect width="400" height="400" fill="url(#g)"/>' +
+      '<circle cx="200" cy="200" r="80" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="3"/>' +
+      '<circle cx="200" cy="200" r="40" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2"/>' +
+      '</svg>'
+    );
+    const DEMO_SMALL_SVG = 'data:image/svg+xml,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">' +
+      '<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">' +
+      '<stop offset="0%" style="stop-color:#1DB954"/>' +
+      '<stop offset="100%" style="stop-color:#121212"/>' +
+      '</linearGradient></defs>' +
+      '<rect width="80" height="80" fill="url(#g)"/>' +
+      '<circle cx="40" cy="40" r="16" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>' +
+      '</svg>'
+    );
+
+    const DEMO_TRACK = {
+      item: {
+        id: 'demo-track-1', name: 'Midnight Dreams',
+        artists: [{ name: 'Neon Waves' }],
+        album: { name: 'Electric Nights', images: [{ url: DEMO_ALBUM_SVG, width: 400, height: 400 }] },
+        duration_ms: 225000,
+        external_urls: { spotify: 'https://open.spotify.com' }
+      },
+      is_playing: true,
+      progress_ms: 42000
+    };
+
+    const DEMO_RECENT = [
+      { track: { name: 'Neon Lights', artists: [{ name: 'Daft Punk' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'Ocean Drive', artists: [{ name: 'Duke Dumont' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'Electric Feel', artists: [{ name: 'MGMT' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'Starboy', artists: [{ name: 'The Weeknd' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'Blinding Lights', artists: [{ name: 'The Weeknd' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'One More Time', artists: [{ name: 'Daft Punk' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'Get Lucky', artists: [{ name: 'Daft Punk' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'Lost in Translation', artists: [{ name: 'Paris Paloma' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'Borderline', artists: [{ name: 'Tame Impala' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } },
+      { track: { name: 'After Hours', artists: [{ name: 'The Weeknd' }], album: { images: [{ url: DEMO_SMALL_SVG }] } } }
+    ];
+
+    /* =============================================
+       PKCE Helpers
+       ============================================= */
+    function generateCodeVerifier() {
+      const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+      const values = crypto.getRandomValues(new Uint8Array(64));
+      return Array.from(values).map(x => possible[x % possible.length]).join('');
+    }
+
+    function base64url(input) {
+      return btoa(String.fromCharCode(...new Uint8Array(input)))
+        .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    }
+
+    async function generateCodeChallenge(verifier) {
+      const encoder = new TextEncoder();
+      const digest = await crypto.subtle.digest('SHA-256', encoder.encode(verifier));
+      return base64url(digest);
+    }
+
+    /* =============================================
+       Auth
+       ============================================= */
+    const Auth = {
+      login() {
+        if (!CLIENT_ID) return;
+        const verifier = generateCodeVerifier();
+        localStorage.setItem('code_verifier', verifier);
+        generateCodeChallenge(verifier).then(challenge => {
+          const params = new URLSearchParams({
+            client_id: CLIENT_ID,
+            response_type: 'code',
+            redirect_uri: REDIRECT_URI,
+            code_challenge_method: 'S256',
+            code_challenge: challenge,
+            scope: SCOPES
+          });
+          window.location.href = 'https://accounts.spotify.com/authorize?' + params;
+        });
+      },
+
+      async handleCallback() {
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
+        const error = params.get('error');
+        if (error) { console.warn('Spotify auth error:', error); return false; }
+        if (!code) return false;
+
+        const verifier = localStorage.getItem('code_verifier');
+        try {
+          const res = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'authorization_code', code,
+              redirect_uri: REDIRECT_URI,
+              client_id: CLIENT_ID,
+              code_verifier: verifier || ''
+            })
+          });
+          const data = await res.json();
+          if (data.access_token) {
+            localStorage.setItem('spotify_access_token', data.access_token);
+            localStorage.setItem('spotify_refresh_token', data.refresh_token || '');
+            localStorage.setItem('spotify_token_expires', String(Date.now() + data.expires_in * 1000));
+            window.history.replaceState({}, document.title, REDIRECT_URI);
+            return true;
+          }
+          console.warn('Token exchange failed:', data);
+        } catch (e) { console.error('Token exchange error:', e); }
+        return false;
+      },
+
+      async refreshToken() {
+        const rt = localStorage.getItem('spotify_refresh_token');
+        if (!rt) return false;
+        try {
+          const res = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token', refresh_token: rt, client_id: CLIENT_ID
+            })
+          });
+          const data = await res.json();
+          if (data.access_token) {
+            localStorage.setItem('spotify_access_token', data.access_token);
+            if (data.refresh_token) localStorage.setItem('spotify_refresh_token', data.refresh_token);
+            localStorage.setItem('spotify_token_expires', String(Date.now() + data.expires_in * 1000));
+            return true;
+          }
+          return false;
+        } catch { return false; }
+      },
+
+      async ensureValidToken() {
+        const token = localStorage.getItem('spotify_access_token');
+        if (!token) return false;
+        const expires = localStorage.getItem('spotify_token_expires');
+        if (expires && Date.now() > parseInt(expires) - 120000) {
+          const ok = await Auth.refreshToken();
+          if (!ok) { Auth.clearTokens(); return false; }
+        }
+        return true;
+      },
+
+      clearTokens() {
+        localStorage.removeItem('spotify_access_token');
+        localStorage.removeItem('spotify_refresh_token');
+        localStorage.removeItem('spotify_token_expires');
+        localStorage.removeItem('code_verifier');
+      }
+    };
+
+    /* =============================================
+       Spotify API
+       ============================================= */
+    const API = {
+      async fetch(url) {
+        const valid = await Auth.ensureValidToken();
+        if (!valid) return null;
+        const token = localStorage.getItem('spotify_access_token');
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.status === 401) {
+          const refreshed = await Auth.refreshToken();
+          if (refreshed) {
+            return fetch(url, { headers: { 'Authorization': `Bearer ${localStorage.getItem('spotify_access_token')}` } });
+          }
+          Auth.clearTokens(); return null;
+        }
+        if (res.status === 204) return null;
+        return res;
+      },
+
+      async currentlyPlaying() {
+        const res = await API.fetch('https://api.spotify.com/v1/me/player/currently-playing');
+        if (!res) return null;
+        try { return await res.json(); } catch { return null; }
+      },
+
+      async recentlyPlayed() {
+        const res = await API.fetch('https://api.spotify.com/v1/me/player/recently-played?limit=10');
+        if (!res) return [];
+        try { const d = await res.json(); return d.items || []; } catch { return []; }
+      }
+    };
+
+    /* =============================================
+       UI
+       ============================================= */
+    const UI = {
+      els: {},
+
+      init() {
+        this.els = {
+          loginScreen: document.getElementById('loginScreen'),
+          playerCard: document.getElementById('playerCard'),
+          albumArt: document.getElementById('albumArt'),
+          trackName: document.getElementById('trackName'),
+          trackArtist: document.getElementById('trackArtist'),
+          trackInfo: document.getElementById('trackInfo'),
+          progressFill: document.getElementById('progressFill'),
+          currentTime: document.getElementById('currentTime'),
+          totalTime: document.getElementById('totalTime'),
+          progressSection: document.getElementById('progressSection'),
+          openBtn: document.getElementById('openBtn'),
+          nothingPlaying: document.getElementById('nothingPlaying'),
+          recentList: document.getElementById('recentList'),
+          recentCount: document.getElementById('recentCount'),
+          recentCard: document.getElementById('recentCard'),
+          statusDot: document.getElementById('statusDot')
+        };
+      },
+
+      showLogin() {
+        this.els.loginScreen.classList.remove('hidden');
+        this.els.albumArt.classList.add('hidden');
+        this.els.trackInfo.classList.add('hidden');
+        this.els.progressSection.classList.add('hidden');
+        this.els.openBtn.classList.add('hidden');
+        this.els.nothingPlaying.classList.add('hidden');
+        this.els.recentCard.classList.add('hidden');
+      },
+
+      showPlayer() {
+        this.els.loginScreen.classList.add('hidden');
+        this.els.albumArt.classList.remove('hidden');
+        this.els.trackInfo.classList.remove('hidden');
+        this.els.progressSection.classList.remove('hidden');
+        this.els.openBtn.classList.remove('hidden');
+        this.els.recentCard.classList.remove('hidden');
+      },
+
+      renderTrack(data) {
+        if (!data || !data.item) { this.showNothingPlaying(); return; }
+        const track = data.item;
+        this.els.albumArt.src = track.album.images?.[0]?.url || DEMO_ALBUM_SVG;
+        this.els.trackName.textContent = track.name;
+        this.els.trackArtist.textContent = track.artists?.map(a => a.name).join(', ') || '—';
+        this.els.openBtn.href = track.external_urls?.spotify || '#';
+        this.els.nothingPlaying.classList.add('hidden');
+        this.els.trackInfo.classList.remove('hidden');
+        this.els.progressSection.classList.remove('hidden');
+        this.els.openBtn.classList.remove('hidden');
+        this.els.statusDot.className = data.is_playing ? 'dot' : 'dot paused';
+      },
+
+      showNothingPlaying() {
+        this.els.nothingPlaying.classList.remove('hidden');
+        this.els.trackInfo.classList.add('hidden');
+        this.els.progressSection.classList.add('hidden');
+        this.els.openBtn.classList.add('hidden');
+        this.els.statusDot.className = 'dot paused';
+      },
+
+      updateProgress(current, duration) {
+        const pct = duration > 0 ? (current / duration) * 100 : 0;
+        this.els.progressFill.style.width = Math.min(pct, 100) + '%';
+        this.els.currentTime.textContent = formatTime(current);
+        this.els.totalTime.textContent = formatTime(duration);
+      },
+
+      renderRecentlyPlayed(items) {
+        const list = this.els.recentList;
+        if (!items || items.length === 0) {
+          list.innerHTML = '<p style="color:#6a6a6a;font-size:0.85rem;text-align:center;padding:16px;">Sin reproducciones recientes</p>';
+          this.els.recentCount.textContent = '0'; return;
+        }
+        let html = '';
+        items.forEach((item, i) => {
+          const t = item.track;
+          const img = t.album?.images?.[0]?.url || DEMO_SMALL_SVG;
+          html += `
+            <div class="recent-item">
+              <span class="index">${i + 1}</span>
+              <img src="${img}" alt="" loading="lazy">
+              <div class="info">
+                <div class="name">${escapeHtml(t.name || '—')}</div>
+                <div class="artist">${escapeHtml(t.artists?.map(a => a.name).join(', ') || '—')}</div>
+              </div>
+            </div>
+          `;
+        });
+        list.innerHTML = html;
+        this.els.recentCount.textContent = String(items.length);
+      },
+
+      setDemoMode() {
+        this.renderTrack(DEMO_TRACK);
+        this.renderRecentlyPlayed(DEMO_RECENT);
+        UI.els.loginScreen.classList.add('hidden');
+        UI.els.albumArt.classList.remove('hidden');
+        UI.els.recentCard.classList.remove('hidden');
+        UI.updateProgress(DEMO_TRACK.progress_ms, DEMO_TRACK.item.duration_ms);
+      }
+    };
+
+    /* =============================================
+       Helpers
+       ============================================= */
+    function formatTime(ms) {
+      if (!ms || ms < 0) return '0:00';
+      const total = Math.floor(ms / 1000);
+      return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    /* =============================================
+       App
+       ============================================= */
+    const App = {
+      trackState: { id: null, startProgress: 0, startTime: 0, duration: 0, isPlaying: false },
+      animFrameId: null, pollId: null, recentCounter: 0,
+
+      async init() {
+        UI.init();
+        const hadCallback = await Auth.handleCallback();
+        const hasToken = !!localStorage.getItem('spotify_access_token');
+
+        if (!CLIENT_ID) {
+          UI.setDemoMode();
+          this.startDemoAnimation();
+          return;
+        }
+
+        if (hasToken) {
+          const valid = await Auth.ensureValidToken();
+          if (valid) { UI.showPlayer(); this.startPolling(); return; }
+        }
+
+        UI.showLogin();
+      },
+
+      login() { Auth.login(); },
+
+      startPolling() {
+        this.fetchAndUpdate();
+        this.pollId = setInterval(() => this.fetchAndUpdate(), 5000);
+      },
+
+      async fetchAndUpdate() {
+        const valid = await Auth.ensureValidToken();
+        if (!valid) { this.stopPolling(); UI.showLogin(); return; }
+
+        const data = await API.currentlyPlaying();
+
+        if (data && data.item) {
+          const changed = data.item.id !== this.trackState.id;
+          this.trackState = {
+            id: data.item.id, isPlaying: data.is_playing,
+            duration: data.item.duration_ms,
+            startProgress: data.progress_ms, startTime: Date.now()
+          };
+          if (changed) UI.renderTrack(data);
+          this.startProgressAnimation();
+        } else if (data === null && this.trackState.id) {
+          this.trackState.id = null;
+          UI.showNothingPlaying();
+          this.stopProgressAnimation();
+        }
+
+        this.recentCounter++;
+        if (this.recentCounter % 6 === 0) {
+          API.recentlyPlayed().then(items => { if (items.length) UI.renderRecentlyPlayed(items); });
+        }
+      },
+
+      startProgressAnimation() {
+        this.stopProgressAnimation();
+        const animate = () => {
+          if (!this.trackState.isPlaying) {
+            UI.updateProgress(this.trackState.startProgress, this.trackState.duration);
+            return;
+          }
+          const elapsed = Date.now() - this.trackState.startTime;
+          const current = Math.min(this.trackState.startProgress + elapsed, this.trackState.duration);
+          UI.updateProgress(current, this.trackState.duration);
+          if (current < this.trackState.duration) {
+            this.animFrameId = requestAnimationFrame(animate);
+          }
+        };
+        animate();
+      },
+
+      stopProgressAnimation() {
+        if (this.animFrameId) { cancelAnimationFrame(this.animFrameId); this.animFrameId = null; }
+      },
+
+      stopPolling() {
+        if (this.pollId) { clearInterval(this.pollId); this.pollId = null; }
+        this.stopProgressAnimation();
+      },
+
+      startDemoAnimation() {
+        this.trackState = {
+          id: DEMO_TRACK.item.id, startProgress: DEMO_TRACK.progress_ms,
+          startTime: Date.now(), duration: DEMO_TRACK.item.duration_ms, isPlaying: true
+        };
+        const animate = () => {
+          const elapsed = Date.now() - this.trackState.startTime;
+          const current = Math.min(this.trackState.startProgress + elapsed, this.trackState.duration);
+          UI.updateProgress(current, this.trackState.duration);
+          if (current >= this.trackState.duration) {
+            this.trackState.startProgress = 0;
+            this.trackState.startTime = Date.now();
+          }
+          this.animFrameId = requestAnimationFrame(animate);
+        };
+        animate();
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => App.init());
+  </script>
+</body>
+</html>
